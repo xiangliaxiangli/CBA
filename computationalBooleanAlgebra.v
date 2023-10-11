@@ -275,6 +275,9 @@ End Circuit_printing.
 Section Circuit_printing_4.
 
 (* circuit printer version 4 *)
+(* 我查的非 与 异或 或 之间的逻辑关系好像和老师查的不大一样 *)
+(* 非 > 与 > 异或 > 或 *)
+(* 4 3 2 1 *)
 (* Nat.compare : nat -> nat -> comparison 对比两个数字的大小 *)
 Definition compare_level (inner:nat) (out:nat) : bool :=
   match (Nat.compare inner out) with
@@ -464,6 +467,16 @@ Fixpoint simp (c:Circuit) : Circuit :=
   | Or False y => simp y      (* 0+y=y *)
   | Or x False => simp x      (* x+0=x *)
 
+
+(*    | Or ((And x w)as l1) ((And y (Not z))as l2)  
+   | Or ((And x w)as l1) ((And (Not z) y)as l2) 
+   | Or ((And y (Not z))as l1) ((And x w)as l2)  
+   | Or ((And (Not z) y)as l1) ((And x w)as l2)  =>
+      if andg (eqc x y) (eqc w z) then simp x  
+      else if andg (eqc x z) (eqc w y) then simp w  
+      else Or (simp l1) (simp l2) 
+ *)
+
   | Or (Var x) (Not (Var y)) 
   | Or (Not (Var y)) (Var x) => if x =? y then True else c
   | Or ((Var _) as x) y => Or x (simp y)  
@@ -507,6 +520,7 @@ Fixpoint msimp (c:Circuit) (n:nat) : Circuit :=
 Compute (prc (msimp se_ex1xt 3)). (*  "y+z'+yz'" *)
 
 (* calculate cofactor of a circuit c w.r.t. an assignment x=b. *)
+
 Definition cofactor (c:Circuit) (x:string) (v:Circuit) :=
   simp (assign c x v).
 
@@ -539,7 +553,7 @@ Compute (prc (SE circ_ex1 "x")).
 Compute (prc (msimp (SE circ_ex1 "x") 3)).
 (* "x(y+z'+yz')+x'y" *)
 
-(* The verification of Shannon expansion based on Circuir structure *)
+(* 香农展开公式的验证 *)
 
 End Shannon_Expansion_on_one_variable.
 
@@ -812,6 +826,434 @@ Compute prc (goSES2 circ_ex1 ["x"; "y";"z"] 3). (* "(z+y+x)(z'+y)" *)
 
 End ShannonExpanssion_AndOr.
 
+Section AbsorptionSimp.
+
+Fixpoint absorpt (c:Circuit)  : Circuit :=
+  match c with
+
+    (* x && (!x || z) = x && z. *)
+    | And x ((Or (Not y) z) as w) 
+    | And ((Or (Not y) z) as w) x =>
+      let x := absorpt x in 
+      let y := absorpt y in
+      let z := absorpt z in
+        if eqc x y 
+        then And x z
+        else And x (absorpt w)
+
+    (* !x && (x || z) = !x && z. *)
+    | And (Not x) ((Or y z) as w)
+    | And ((Or y z) as w) (Not x) =>
+      let x := absorpt x in 
+      let y := absorpt y in
+      let z := absorpt z in
+        if eqc x y
+        then And (Not x) z
+        else if eqc x z 
+        then And (Not x) y
+        else And (Not x) (absorpt w)
+
+    (* x && (x || z) = x. *)
+    | And x ((Or y z) as w)
+    | And ((Or y z) as w) x =>
+      let x := absorpt x in 
+      let y := absorpt y in
+      let z := absorpt z in
+        if eqc x y 
+        then x 
+        else And x (absorpt w)
+
+    (* ！x || (x && z) = ！x || z. *)
+    | Or (Not x) ((And y z) as w) 
+    | Or ((And y z) as w) (Not x) =>
+      let x := absorpt x in 
+      let y := absorpt y in
+      let z := absorpt z in
+        if eqc x y 
+        then Or (Not x) z
+        else if eqc x z
+        then Or (Not x) y
+        else Or (Not x) (absorpt w)
+
+    (* x || (!x && z) = x || z. *)
+    | Or x ((And (Not y) z) as w)
+    | Or ((And (Not y) z) as w) x =>
+      let x := absorpt x in 
+      let y := absorpt y in
+      let z := absorpt z in
+        if eqc x y 
+        then Or x z 
+        else Or x (absorpt w)
+
+    (* x || (x && z) = x. *)
+    | Or x ((And y z) as w)
+    | Or ((And y z) as w) x =>
+      let x := absorpt x in 
+      let y := absorpt y in
+      let z := absorpt z in
+        if eqc x y 
+        then x
+        else Or x (absorpt w)
+
+(* (* x&&x=x *)
+    | And x y => 
+      let x := absorpt x in
+      let y := absorpt y in
+        if eqc x y
+        then x 
+        else And x y(* 普通的 *)
+(* x||x=x *)
+    | Or x y => 
+      let x := absorpt x in
+      let y := absorpt y in
+        if eqc x y
+        then x 
+        else Or x y (* 普通的 *) *)
+    | And x y => And (absorpt x) (absorpt y)
+    | Or x y => Or (absorpt x) (absorpt y)
+    | Not x => Not (absorpt x)
+    | Xor x y => Xor (absorpt x) (absorpt y)
+    | _ => c
+  end.
+  
+
+
+End AbsorptionSimp.
+Print absorpt.
+(* xy+xy'=x *)
+Section x_comple_Simp.
+
+Fixpoint x_comple (c:Circuit) : Circuit :=
+  match c with
+  | Or (And x y) (And w z) =>
+    let x := x_comple x in
+    let y := x_comple y in
+    let w := x_comple w in
+    let z := x_comple z in
+      if andg (eqc x w) (eqc y (Not z)) then x
+      else if andg (eqc x w) (eqc (Not y) z) then x
+      else if andg (eqc x z) (eqc y (Not w)) then x
+      else if andg (eqc x z) (eqc (Not y) w) then x
+      else if andg (eqc x (Not w)) (eqc y z) then y
+      else if andg (eqc x (Not z)) (eqc y w) then y
+      else if andg (eqc (Not x) w) (eqc y z) then y
+      else if andg (eqc (Not x) z) (eqc y w) then y
+(*       else Or (And x y) (And w (Not z)) *)
+      else Or (And x y) (And w z)
+
+  | Or x y => Or (x_comple x) (x_comple y)
+  | And x y => And (x_comple x) (x_comple y)
+  | Not x => Not (x_comple x)
+  | Xor x y => Xor (x_comple x) (x_comple y)
+(* true false var 等 *)
+  | _ => c
+  end.
+
+Print x_comple.
+
+Let x := @"x".
+Let y := @"y".
+Let z := @"z".
+(* test of complement *)
+Definition test_com :=z && ((!x && y) || (x && y)).
+Compute print (x_comple test_com) 0.
+End x_comple_Simp.
+
+Section ShannonExpanssionRevised.
+
+Open Scope string_scope. (* to allow ["x"] *)
+Compute (prc circ_ex1). (* "xy+xz'+y(x'z+z')" *)
+Let n:=3.
+Let vars := ["x";"y"].
+Compute prc (sop (msimp (SES circ_ex1 vars) n) n).
+Compute prc (absorpt (sop (msimp (SES circ_ex1 vars) n) n)).
+Compute prc (sop (absorpt (msimp (SES circ_ex1 vars) n)) n). (*  = "y+xz'" *)
+ 
+Definition asimp (c:Circuit) (n:nat) : Circuit :=
+   sop (x_comple(absorpt (msimp c n))) n.
+
+(* masimp:执行asimp函数n次 *)
+(* sop函数执行完可能还存在可以化简的情况 *)
+Fixpoint masimp (c:Circuit) (n:nat) : Circuit :=
+  match n with
+  | 0 => c
+  | S m => masimp (asimp c n) m
+  end.
+
+Definition goSES1 (c:Circuit) (vars: list string) (n:nat) : Circuit :=
+   masimp (SES c vars) n.
+
+Compute prc (goSES1 circ_ex1 ["x";"y"] 3). (* "y+xz'" *)
+
+Compute prc (goSES1 circ_ex1 ["x";"y";"z"] 3). (*  "zy+z'y+z'x" *)
+
+Compute prc (goSES1 circ_ex1 ["y";"x"] 3). (* "xy+xy'z'+x'y" *)
+
+
+Definition prSES1 (c:Circuit) (vars: list string) (n:nat) : string :=
+  print (goSES1 c vars n) 0.
+
+(* test circ_ex1 *)
+Compute prSES1 circ_ex1 [] 2.
+Compute prSES1 circ_ex1 ["x"; "y"] 3. (* "y+xz'" *)
+Compute prSES1 circ_ex1 ["x"; "y"; "z"] 2. (* "zy+z'y+z'x" *) (* 顺序问题 *)
+Compute goSES1 circ_ex1 ["x"; "y"; "z"] 2. 
+Compute prSES1 circ_ex1 ["y"; "x"] 3. (* "xy+xz'+x'y" *) (* 顺序问题 *)
+Compute prSES1 circ_ex1 ["z"; "x"] 3. (* "xz'+xy+x'y" *) (* 顺序问题 *)
+Compute goSES1 circ_ex1 ["z"; "x"] 3. 
+Compute prSES1 circ_ex1 ["x"; "z"] 3. (* "zy+z'x+z'y" *) (* 顺序问题 *)
+Compute prSES1 circ_ex1 ["y"; "z"] 3. (* "zy+(z'y+z'x)" *)
+Compute goSES1 circ_ex1 ["y"; "z"] 3.
+(* 最简 *)
+Compute prSES1 circ_ex1 ["z"; "y"] 3. (* "y+z'x" *)
+
+Compute prSES1 circ_ex1 ["y"] 3. (* "yx+yz'+yx'+y'xz'" *) (* 顺序问题 *)
+Compute prSES1 circ_ex1 ["z"] 3. (* "zy+z'x+z'y" *) 
+Compute goSES1 circ_ex1 ["z"] 3.
+
+Compute prSES1 circ_ex1 ["x"; "z"; "y"] 4. (* "y+z'x" *)
+
+Compute prSES1 circ_ex1 ["y"; "x"; "z"] 3. (* "zy+xz'+yz'" *)(* 顺序问题 *)
+Compute prSES1 circ_ex1 ["y"; "z"; "x"] 3. (* "(xz'+xy)+yx'" *)(* 顺序问题 *)
+
+(* test circ_ex7:a'c' + a'cd' + ab'c'd + abc'd + ac *)
+Let a := @"a".
+Let b := @"b".
+Let c := @"c".
+Let d := @"d".
+Definition circ_ex7 := !a&&!c || !a&&c&&!d || a&&!b&&!c&&d || a&&b&&!c&&d || a&&c.
+Compute prSES1 circ_ex7 [] 3. (* "a'cd'+a'c'+ab'c'd+abc'd+ac" *)
+Compute prSES1 circ_ex7 ["a"; "b"] 3. (* "ac+ad+a'c'+a'd'" *)
+Compute prSES1 circ_ex7 ["a"; "b"; "c"] 2. (* "ca+cd'+c'a'+c'd" *)
+Compute prSES1 circ_ex7 ["a"; "b"; "c"; "d"] 4. (* "dc'+da+d'c+d'a'" *) 
+Compute prSES1 circ_ex7 ["a"; "d"] 3. (* "da+da'c'+d'a'+d'c" *)
+Compute prSES1 circ_ex7 ["b"; "d"] 4. (* "dc'+dac+d'a'+d'ac" *)
+Compute prSES1 circ_ex7 ["d"; "a"] 4. (* "ad+ad'c+a'd'+a'c'" *)
+Compute prSES1 circ_ex7 ["d"; "c"] 5. (* "cd'+ca+c'd(a'+b'+ab)+c'd'a'" *)
+Compute prSES1 circ_ex7 ["b"; "d"; "c"; "a"] 4. (* "ac+ad+a'c'+a'd'" *)
+Compute prSES1 circ_ex7 ["d"; "c"; "b"; "a"] 4. (* "ac+ad+a'c'+a'd'" *)
+End ShannonExpanssionRevised.
+
+(* 对cir_ex7的化简结果进行测试 *)
+Section test_ex7.
+Open Scope gate_scope.
+Variable a b c d: bool.
+Let cir := !a&&!c || !a&&c&&!d || a&&!b&&!c&&d || a&&b&&!c&&d || a&&c.
+Let cir_ab := a&&c||a&&d||!a&&!c||!a&&!d.
+Let cir_abc := c&&a || c&&!d || !c&&!a || !c&&d. 
+Let cir_abcd := d&&!c || d&&a || !d&&c || !d&&!a.
+Lemma eq_ab : cir = cir_ab.
+truth_table_tactic4 a b c d.
+Qed.
+Lemma eq_abc : cir = cir_abc.
+truth_table_tactic4 a b c d.
+Qed.
+Lemma eq_abcd : cir = cir_abcd.
+truth_table_tactic4 a b c d.
+Qed.
+End test_ex7.
+(* 对于所给的Circuit电路结构进行各种化简，并根据所给的评估函数
+   输出一个理想的最好的结果
+ *)
+Section Synthesis_section.
+(* 存放所有化简结果的列表 *)
+Definition AllExps := list Circuit.
+(* 评估函数的抽象 *)
+(* 暂定：输入一个Circuit类型的变量，输出得到一个nat类型的值代表评估结果
+   评估结果的值越小代表表达式的化简效果越好 *)
+Definition wTable := list (string*nat). (* 电路权重表 *)
+Definition Access := Circuit -> wTable -> nat -> nat. 
+
+(* 
+  影响化简结果的因素：
+  1. Shannon Expansion ： SES
+    1.1 针对变量的个数
+    1.2 针对变量的顺序
+  2. 所采用的化简的算法 simp, absorption, sop
+  3. 所采用化简算法的顺序
+  4. 化简的次数
+ *)
+Section syn_sec1.
+Open Scope string_scope.
+
+(* Fixpoint test (n:nat) (vars:list string) (temp:list string) :=
+  match vars with
+  | [] => []
+  | hd::tl => if Nat.eqb n 0 then [temp] else app (test (Nat.sub n 1) tl (hd::temp)) (test n tl temp)
+  end. *)
+
+(* 从含有n个元素的数组中找到k个元素组成新的数组 *)
+Fixpoint find_n (n:nat) (vars:list string) :=
+  match n with
+  | 0 => []
+  | S m => match vars with
+          | [] => []
+          | hd::tl => hd::find_n m tl
+          end
+  end.
+
+Compute find_n 2 ["x"; "y"; "z"].
+(* 整合SE，simpl，absorp，SOP对电路表达式进行化简
+   c : 待化简的电路
+   result : 
+   batch : 每次化简迭代允许的最高迭代上线
+ *)
+Fixpoint synthesis_pre (c:Circuit) (batch:nat) (results:list (list string)):=
+  match results with
+  | [] => []
+  | hd::tl => (absorpt (sop (msimp (SES c hd) batch) batch))::synthesis_pre (c) batch tl
+  end.
+
+Fixpoint pr_all (re:list Circuit) :=
+  match re with
+  | [] => []
+  | hd::tl => print hd 0 :: pr_all tl
+  end.
+
+Compute pr_all (synthesis_pre circ_ex1 3 [["x";"y"];["x";"z"];["y";"z"]]).
+
+End syn_sec1.
+
+(* 评估函数 *)
+Section access_sec.
+
+(* 获得所有化简结果所对应的分数 *)
+Fixpoint result_score (result:list Circuit) (acc:Access) (ws:wTable) (default:nat) : list nat :=
+  match result with
+  | [] => []
+  | hd::tl => (acc hd ws default)::result_score tl acc ws default
+  end.
+
+Check Nat.ltb.
+Fixpoint find_min_n (re:list nat) (count:nat) (nth:nat) (min:nat) :=
+  match re with
+  | [] => nth
+  | hd::tl => if (Nat.ltb hd min) then find_min_n tl (S count) count hd
+              else find_min_n tl (S count) nth min
+  end.
+Compute find_min_n [1;2;3;0;1] 0 100 100. (* 3 *)
+Definition find_min_th (re:list nat) :=
+  find_min_n re 0 100 100. 
+Compute find_min_th [1;0;3;0;1].
+Check nth.
+
+Definition synthesis (default:Circuit) (result:list Circuit) (acc:Access) (ws:wTable) (de_w:nat) : Circuit :=
+  nth (find_min_th (result_score result acc ws de_w)) result default.
+
+(* 一个根据门电路个数来判断电路化简好坏的函数
+   c : 电路
+   val_tab : 电路的权重表
+ *)
+
+(* 从权重表里获取门电路的权重，default为默认权重 *)
+Fixpoint getw (vals : wTable) (x:string) (default:nat) : nat :=
+  match vals with
+  | ((a,b) as hd)::tl =>
+      if eqb a x then b else getw tl x default
+  | nil => default
+end.
+
+Fixpoint acc_by_gate_num (c:Circuit) (val_tab:wTable) (default:nat) :nat :=
+  let acc c' := acc_by_gate_num c' val_tab default in
+  match c with
+  | True => getw val_tab "True" default
+  | False => getw val_tab "False" default
+  | Var _ => getw val_tab "Var" default
+  | Not x => (acc x ) + getw val_tab "Not" default
+  | And x y => (acc x) + (acc y) + getw val_tab "And" default
+  | Or x y => (acc x) + (acc y) + getw val_tab "Or" default
+  | Xor x y => (acc x) + (acc y) + getw val_tab "Xor" default
+  end.
+
+Open Scope string_scope.
+
+(* 门电路权重表 *)
+Definition ws := [("True",1);("False",1);("Var",1);("Not",2);("And",3);("Or",3);("Xor",3)].
+
+Compute pr_all (synthesis_pre circ_ex1 3 [["x";"y"];["x";"z"];["y";"z"]]).
+(* ["y+xz'"; "zxy+zx'y+z'x+z'x'y"; "z'y+z'y'x+zy"] *)
+
+
+Compute print circ_ex1 0.
+
+Compute 
+print 
+(synthesis circ_ex1 
+    (synthesis_pre circ_ex1 3 
+         [["x";"y"];["x";"z"];["y";"z"]]) 
+            acc_by_gate_num ws 1) 0.
+(* "y+xz'" *)
+
+(* 6.11 定义一个自动找变量顺序的函数 *)
+
+(* 定义函数，根据所给变量个数求得变量的所有可能组合情况 
+Definition varsInCircuit (c:Circuit) : list string :=
+  vic c [].
+*)
+(* Compute remove eqb_str "x" ["x"; "y"; "z"].*)
+(* 自己写的移除函数 *)
+Fixpoint remove_str (x:string) (l:list string) : list string :=
+  match l with
+  | [] => []
+  | y::tl => if (eqb x y) then remove_str x tl else y::(remove_str x tl)
+  end.
+
+Compute remove_str "x" ["x"; "y"].
+
+(* 把x加到列表l的最末端 *)
+Fixpoint add_last (x:string) (l:list string) : list string :=
+  match l with
+  | [] => [x]
+  | y::tl => y::(add_last x tl)
+  end.
+
+Compute add_last "a" ["x"; "z"; "y"].
+
+(* Fixpoint get_vars_by_n (n:nat) (vars:list string) (temp:list string) (result:list (list string)) : list (list string) :=
+  let Allvars c := remove_str c vars in (* 从vars中去掉已经选择的变量 *)
+  let applast c := add_last c (Allvars c) in
+  match n, vars with
+  | 0, [] => []
+  | 0, _ => temp::result
+  | S m, hd :: tl => get_vars_by_n m (Allvars hd) (hd::temp) result ++ get_vars_by_n m (applast hd) (temp) result 
+  | _, _ => []
+end. *)
+
+End access_sec.
+
+End Synthesis_section.
+
+Section BlifGenerator.
+
+(* assume the circuit is in POS form, generate blif string. *)
+Fixpoint c2blif' (c:Circuit) : string :=
+  (* %string should be added here otherwise "" and ++ are not acceptable. *)
+  let paren c := ("(" ++ (prc c) ++ ")")%string in
+  let pr c := if is_atomic c then prc c else paren c in 
+  match c with
+  | True  => "Unexpected True"
+  | False => "Unexpected False"
+  | Var v => "1"
+  | Not (Var v) => "0"
+  | Not x => "Unexpected Not(" ++ (prc x) ++ ")"
+  | And x y => (c2blif' x) ++ "" ++ (c2blif' y)
+  | Or  x y => (c2blif' x) ++ "
+" ++ (c2blif' y)
+  | Xor x y => "Unexpected Xor(" ++ (prc x) ++ "," ++ (prc y) ++")"
+end.
+
+Fixpoint c2blif (c:Circuit) : string :=
+ "
+" ++ (c2blif' c).
+
+Open Scope string_scope.
+(* test example *)
+Let circ_ex1_yx := (goSES1 circ_ex1 ["y";"x"] 3). (* "xy+xy'z'+x'y" *)
+
+Compute c2blif circ_ex1_yx.
+
+End BlifGenerator.
+
 (** verification by simulation and equivalence checking. **)
 
 Section Circuit_simulation.
@@ -934,25 +1376,19 @@ Qed.
 
 End Circuit_simulation.
 
-
 (** OCaml code extraction example. **)
 
-(* simple extraction example. *)
+(* 代码抽取的案例 *)
 Require Import Extraction.
-Recursive Extraction ShannonExpanssion prc.
 
-(* improved extraction with object mapping. *)
+(* coq类型到Ocaml类型的映射 *)
 Extract Inductive nat => int [ "0" "succ" ] "(fun fO fS n -> if n=0 then fO () else fS (n-1))".
 Extract Inductive bool => "bool" [ "true" "false" ].
 Extract Inductive list => "list" [ "[]" "(::)" ].
 Extract Inductive prod => "(*)"  [ "(,)" ].
-(* coq has a special library for string extraction. *)
-(* https://coq.inria.fr/library/Coq.extraction.ExtrOcamlNativeString.html *)
-Require Import ExtrOcamlNativeString. (* string extraction. *)
-(* extract functions ShannonExpanssion and prc. *)
-Recursive Extraction ShannonExpanssion prc print.
-(* extract listed functions into file. *)
-Extraction "se.ml" SE prSES prc print circ_ex1. 
+(* string类型的映射. *)
+Require Import ExtrOcamlNativeString.
+Extraction "se.ml" simp. (* 抽取代码到ml文件 *)
 
 
 (* for boolean proposition reasoning. *)
@@ -1361,9 +1797,98 @@ Lemma simp_var : forall s, simp (@ s) = @ s.
 intro. reflexivity.
 Qed.
 
+(* not finished and not in use
+Lemma simp_var_and : forall s c, 
+  c2b (simp (@ s && c)) = c2b (@ s && simp c).
+intros.  induction c; simpl; try(reflexivity).
+truth_table_tactic1 (var s).
+truth_table_tactic1 (var s).
+truth_table_tactic1 (var s). 
+Qed.
+
+(* proof follows the structure of the definition. *)
+Lemma simp_and_not : forall s c,
+   c2b (simp (@ s && c)) = c2b (@ s && (simp c)).
+intros. destruct c; simpl; truth_table_tactic1 (var s).
+Qed.
+
+*)
+
+
+(* verification of x_comple *)
+
+Lemma x_comple_or : forall c1 c2, c2b (x_comple (c1 || c2)) = c2b (c1||c2).
+intros.
+induction c1; induction c2; try (reflexivity).
+- simpl in *. rewrite? bounded_false_or2 in *. rewrite IHc2.  reflexivity.
+- simpl in *. rewrite? bounded_false_or2 in *. rewrite IHc2_1. rewrite IHc2_2. reflexivity.
+- simpl in *. 
+Admitted.
+
+(* Lemma x_comple_ok : forall c, c2b (x_comple c) = c2b c.
+induction c; try (reflexivity).
+- simpl. rewrite IHc. easy.
+- simpl. rewrite IHc1. rewrite IHc2. easy.
+-  *)
+
 Lemma and_true : forall x y, andg x y = true -> x = true /\ y = true.
 intros. destruct x; destruct y; try (inversion H).
 - split; easy.
+Qed.
+
+Functional Scheme x_comple_ind := Induction for x_comple Sort Prop. 
+Check x_comple_ind.
+Lemma x_comple_ok : forall c, c2b (x_comple c) = c2b c.
+intros; 
+functional induction (x_comple c);
+try (reflexivity);
+try (simpl in *; rewrite IHc0; easy);
+try (simpl in *; rewrite IHc1; easy);
+try (simpl in *; rewrite IHc0; rewrite IHc1; easy).
+(* 剩下就是Or (And x y) (And w z)对应的8+1种情况 *)
+- simpl in *. apply and_true in e2. inversion e2.
+  apply eqc_eq in H, H0. rewrite IHc0. rewrite H in IHc0.
+  rewrite IHc0 in IHc2. rewrite <- IHc2. rewrite H0 in IHc1.
+  simpl in *. rewrite IHc3 in IHc1. rewrite <- IHc1.
+  truth_table_tactic2 (c2b x0) (c2b z).
+- simpl. apply and_true in e3. inversion e3. rewrite IHc0.
+  apply eqc_eq in H, H0. rewrite H in IHc0. rewrite IHc0 in IHc2.
+  rewrite <- IHc2. rewrite <- H0 in IHc3. simpl in IHc3. rewrite IHc1 in IHc3.
+  rewrite <- IHc3.
+  truth_table_tactic2 (c2b x0) (c2b y0).
+- simpl. apply and_true in e4. inversion e4. rewrite IHc0.
+  apply eqc_eq in H, H0. rewrite H in IHc0. rewrite IHc0 in IHc3.
+  rewrite <- IHc3. rewrite H0 in IHc1. simpl in IHc1. rewrite IHc2 in IHc1.
+  rewrite <- IHc1.
+  truth_table_tactic2 (c2b x0) (c2b w).
+- simpl. apply and_true in e5. inversion e5. rewrite IHc0.
+  apply eqc_eq in H, H0. rewrite H in IHc0. rewrite IHc0 in IHc3.
+  rewrite <- IHc3. rewrite <- H0 in IHc2. simpl in IHc2. rewrite IHc1 in IHc2.
+  rewrite <- IHc2.
+  truth_table_tactic2 (c2b x0) (c2b y0).
+- simpl. apply and_true in e6. inversion e6. rewrite IHc1.
+  apply eqc_eq in H, H0. rewrite H in IHc0. simpl in IHc0. 
+  rewrite IHc2 in IHc0. rewrite <- IHc0.
+  rewrite H0 in IHc1. rewrite IHc1 in IHc3. rewrite IHc3.
+  truth_table_tactic2 (c2b z) (c2b w).
+- simpl. apply and_true in e7. inversion e7. rewrite IHc1.
+  apply eqc_eq in H, H0. rewrite H in IHc0. simpl in IHc0. 
+  rewrite IHc3 in IHc0. rewrite <- IHc0.
+  rewrite H0 in IHc1. rewrite IHc1 in IHc2. rewrite IHc2.
+  truth_table_tactic2 (c2b z) (c2b w).
+- simpl. apply and_true in e8. inversion e8. rewrite IHc1.
+  apply eqc_eq in H, H0. rewrite <- H in IHc2. simpl in IHc2. 
+  rewrite IHc0 in IHc2. rewrite <- IHc2.
+  rewrite H0 in IHc1. rewrite IHc1 in IHc3. rewrite IHc3.
+  truth_table_tactic2 (c2b z) (c2b x0).
+- simpl. simpl. apply and_true in e9. inversion e9. rewrite IHc1.
+  apply eqc_eq in H, H0. rewrite <- H in IHc3. simpl in IHc3. 
+  rewrite IHc0 in IHc3. rewrite <- IHc3.
+  rewrite H0 in IHc1. rewrite IHc1 in IHc2. rewrite IHc2.
+  truth_table_tactic2 (c2b x0) (c2b w).
+(* else *)
+- simpl. rewrite IHc0. rewrite IHc1. rewrite IHc2. rewrite IHc3.
+  easy.
 Qed.
 
 (* it allows the use of functional induction (simp c) in simp_ok proof. *)
@@ -1371,7 +1896,7 @@ Functional Scheme simp_ind := Induction for simp Sort Prop.
 Check simp_ind.
 Lemma simp_ok : forall c, c2b (simp c) = c2b c.
 intros. (* demonstration the effect of functional induction. *)
-functional induction (simp c). 
+functional induction (simp c). (bderiv var order)
 Restart. (* demonstration of induction followed by c2b* rewriting. *)
 intros; functional induction (simp c); try(reflexivity);
 try rewrite ?c2b_and,?c2b_not,?c2b_or,?c2b_xor; try rewrite IHc0; auto.
@@ -1381,12 +1906,13 @@ try rewrite ?c2b_and,?c2b_not,?c2b_or,?c2b_xor; try rewrite IHc0;
 try rewrite ?bounded_true_and,?bounded_false_and;
 try rewrite IHc1;
 try rewrite ?notg_notg;
-try (simpl; rewrite bounded_true_or); 
+try (simpl; rewrite bounded_true_or); (* 成功执行，或者不执行。保证simp不会单独作用 *) 
 try (simpl; rewrite bounded_false_or);
 auto;
-try rewrite eqc_eq in e2; subst; 
+(* 处理剩下10个目标 *) 
+try rewrite eqc_eq in e2; subst; (* 化简 eqc 前提 *)
 try rewrite ?c2b_and,?c2b_not,?c2b_or.
-(* 52 sub-goals *)
+(* 处理剩下52个目标 *)
 - truth_table_tactic1 (c2b x0). 
 - truth_table_tactic1 (c2b (@ _x)).
 - truth_table_tactic1 (c2b (@ _x)).
@@ -1703,6 +2229,7 @@ destruct b; simpl; easy.
 Qed.
 
 (* true cofactor with assignment restricted to true/false. *)
+
 Definition cof (c:Circuit) x (b:bool) :=
   cofactor c x (b2c b).
 
@@ -1832,6 +2359,7 @@ apply SE_cofactor_ok.
 Qed.
 
 (* define Shannon Expansion in terms of cof. *)
+
 Definition cof_se c x := 
   (@ x) && (cof c x true) || (! (@ x)) && (cof c x false).
 
@@ -1839,6 +2367,8 @@ Lemma cof_SE_ok : forall var c x,
   c2b var c = c2b var (cof_se c x). 
 intros. unfold cof_se. unfold cof. apply SE_cofactor_ok.
 Qed.
+
+
   
 End c2b_cofactor_cofactor.
 
@@ -1849,6 +2379,8 @@ Section Boolean_Derivatives_v2.
 
 Definition bderiv (c:Circuit) (x:string) :=
   (cof c x true) (+) (cof c x false).
+
+
 Variable var : tpVarMap.
 (* independance of order of variables for derivatives. 
    df/dxdy = df/dydx *)
@@ -1856,6 +2388,8 @@ Lemma bderiv_var_order (c:Circuit)(x:string) (y:string) :
   x<>y ->
   c2b var (bderiv (bderiv c x) y) = 
   c2b var (bderiv (bderiv c y) x).
+
+
 intro; unfold bderiv. rewrite? c2b_xor.
  rewrite? cof_xor. rewrite? c2b_xor.
  rewrite? (cof_cof var c x). (* key step 1 *)
@@ -1883,6 +2417,8 @@ Qed.
 (* derivatives of constants are 0. *)
 Lemma bderiv_true (x:string) :
   c2b var (bderiv True x) = false.
+
+
 unfold bderiv. simpl. easy.
 Qed.
 
@@ -2122,19 +2658,24 @@ truth_table_tactic2 (a =? cin) (b =? cin).
 Abort.
 End Boolean_Derivatives_v2.
 
+(*Require Import CpdtTactics.*)
 Section QuantificationOperators.
 
 (* Universal Quantification or concensus = F_x && F_x' *)
+
 Definition UniversalQuantification c x :=
   cofactor0 c x && cofactor1 c x.
 Definition UQ := UniversalQuantification.
+
 (* all other vars but x can make UQ true for
    all values of x. *)
 
 (* Existential Quantification or smoothing = F_x || F_x'. *)
+
 Definition ExistentialQuantification c x :=
   cofactor0 c x || cofactor1 c x.
 Definition EQ := ExistentialQuantification.
+
 (* there exists a value of x that makes the
    EQ true. *)
 
